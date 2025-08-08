@@ -1,43 +1,27 @@
-import React, { useState } from 'react';
+import jwt from 'jsonwebtoken';
+import { MongoClient } from 'mongodb';
 
-export default function LoginForm() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('');
+const client = new MongoClient(process.env.MONGO_URI);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
 
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+  const { email, password } = req.body;
 
-    const data = await res.json();
-    setMessage(data.message);
+  try {
+    await client.connect();
+    const db = client.db('testdb');
+    const user = await db.collection('users').findOne({ email });
 
-    if (res.ok) {
-      localStorage.setItem('token', data.token);
+    if (!user || user.password !== password) {
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
-  };
 
-  return (
-    <form onSubmit={handleLogin}>
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <button type="submit">Login</button>
-      <p>{message}</p>
-    </form>
-  );
+    // JWT token
+    const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+    res.status(200).json({ message: 'Login successful', token });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 }
